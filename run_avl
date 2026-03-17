@@ -1,0 +1,180 @@
+folder = 'C:\Users\polit\Documents\ASWR\';
+cd(folder)
+
+% ============================================================
+% GEOMETRY DEFINITION (polygon)
+% x = span direction, y = chordwise direction
+% ============================================================
+x_wing = [0, 1, 1, 0, 0];
+y_wing = [3, 2, 1, 2, 3];
+x_tail = [0, .25, .25, 0, 0];
+y_tail = [.75, .5, .25, .25, .75];
+
+% Plot
+figure
+plot(x_wing, y_wing, '-')
+hold on
+plot(x_tail, y_tail, '-')
+hold off
+grid on
+axis equal
+
+% Areas και AR
+A_wing  = polyarea(x_wing, y_wing);
+A_tail  = polyarea(x_tail, y_tail);
+b_wing  = max(x_wing);
+b_tail  = max(x_tail);
+AR_wing = (b_wing^2) / A_wing;
+AR_tail = (b_tail^2) / A_tail;
+fprintf('A_wing = %.2f\n', A_wing)
+fprintf('A_tail = %.2f\n', A_tail)
+
+a1 = 0;
+a2 = 10;
+N  = 5;
+aoa_vec = linspace(a1, a2, N);
+
+wing_airfoil = 'naca4412.dat' ;
+stab_airfoil = 'naca4412.dat' ;
+
+% ============================================================
+% ΕΞΑΓΩΓΗ SECTIONS ΓΙΑ AVL
+% ============================================================
+% Wing sections
+Yle_wr   = x_wing(1);
+Yle_wt   = x_wing(2);
+chord_wr = y_wing(1) - y_wing(4);
+chord_wt = y_wing(2) - y_wing(3);
+Xle_wr   = 0;
+Xle_wt   = y_wing(1) - y_wing(2);
+
+% Tail sections
+Yle_tr   = x_tail(1);
+Yle_tt   = x_tail(2);
+chord_tr = y_tail(1) - y_tail(4);
+chord_tt = y_tail(2) - y_tail(3);
+Xle_tr   = 0;
+Xle_tt   = y_tail(1) - y_tail(2);
+
+% ============================================================
+% ΓΡΑΦΕΙ ΤΟ AVL FILE
+% ============================================================
+Sref = 2 * A_wing;
+Cref = A_wing / b_wing;
+Bref = 2 * b_wing;
+
+if exist('our_rocket.avl', 'file'), delete('our_rocket.avl'); end
+
+fid = fopen('our_rocket.avl', 'w');
+
+fprintf(fid, 'OUR-ROCKET\n');
+fprintf(fid, '%-22s!   Mach\n',                        '0.0');
+fprintf(fid, '%-22s!   iYsym  iZsym  Zsym\n',          '0     0     0.0');
+fprintf(fid, '%-22s!   Sref   Cref   Bref\n',           sprintf('%.3f  %.3f  %.3f', Sref, Cref, Bref));
+fprintf(fid, '%-22s!   Xref   Yref   Zref\n',           '3.00  0.0   0.5');
+fprintf(fid, '%-22s!   CDp\n',                          '0.020');
+fprintf(fid, '#\n#==============================================================\n#\n');
+
+% --- WING ---
+fprintf(fid, 'SURFACE\nWing\n');
+fprintf(fid, '%-22s! Nchord   Cspace   Nspan  Sspace\n', '10  1.0  22  1.0');
+fprintf(fid, '#\n# reflect image wing about y=0 plane\n');
+fprintf(fid, 'YDUPLICATE\n     0.00000\n#\n#\n');
+fprintf(fid, 'SCALE\n  1.0   1.0   1.0\n#\n');
+fprintf(fid, '# x,y,z bias for whole surface\n');
+fprintf(fid, 'TRANSLATE\n    %.5f     0.00000     0.90000\n', 5.04);
+fprintf(fid, '#\n#--------------------------------------------------------------\n');
+fprintf(fid, '#    Xle         Yle         Zle         chord       angle\n');
+
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_wr, Yle_wr, 0.0, chord_wr, 0.0);
+fprintf(fid, 'AFIL\n%s\n\n', wing_airfoil) ;
+fprintf(fid, '#-----------------------------\n');
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_wt, Yle_wt, 0.0, chord_wt, 0.0);
+fprintf(fid, 'AFIL\n%s\n\n', wing_airfoil) ;
+
+% --- STAB ---
+fprintf(fid, '#\n#==============================================================\n#\n');
+fprintf(fid, 'SURFACE\nStab\n');
+fprintf(fid, '%-22s!  Nchord   Cspace\n', '8  1.0  5  -1.5');
+fprintf(fid, '#\n# reflect image wing about y=0 plane\n');
+fprintf(fid, 'YDUPLICATE\n     0.00000\n#\n');
+fprintf(fid, '# twist angle bias for whole surface\n');
+fprintf(fid, 'ANGLE\n     0.00000\n#\n');
+fprintf(fid, '# x,y,z bias for whole surface\n');
+fprintf(fid, 'TRANSLATE\n   %.4f     0.00000     0.00000\n', 29.5);
+fprintf(fid, 'SCALE\n 1.000  1.0  1.0\n');
+fprintf(fid, '#--------------------------------------------------------------\n');
+fprintf(fid, '#    Xle         Yle         Zle         chord       angle\n');
+
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_tr, Yle_tr, 0.0, chord_tr, 0.0);
+fprintf(fid, 'AFIL\n%s\n\n', stab_airfoil) ;
+fprintf(fid, '#-----------------------------\n');
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_tt, Yle_tt, 0.0, chord_tt, 0.0);
+fprintf(fid, 'AFIL\n%s\n\n', stab_airfoil) ;
+fprintf(fid, '#==============================================================\n');
+
+fclose(fid);
+fprintf('AVL file written: our_rocket.avl\n')
+delete([folder '*.ft']);   
+
+% Βήμα 1: Γράψε τις εντολές για το AVL
+if exist('avl_commands.txt', 'file'), delete('avl_commands.txt'); end
+fid = fopen([folder 'avl_commands.txt'], 'w');
+fprintf(fid, 'load our_rocket.avl\n');
+fprintf(fid, 'oper\n');
+
+for i = 1:N
+    fprintf(fid, 'a a %.2f\n', aoa_vec(i));   % set angle of attack
+    fprintf(fid, 'x\n');                        % solve
+    fprintf(fid, 'ft\n');                       % force totals
+    fprintf(fid, 'results_%.2f.ft\n', aoa_vec(i));  % αποθήκευση
+end
+
+fprintf(fid, '\n\nquit\n');
+fclose(fid);
+
+% Βήμα 2: Τρέξε το AVL
+[status, ~] = system(['"' folder 'avl.exe" < avl_commands.txt']);
+if status ~= 0
+    error('AVL failed to run')
+end
+
+% ============================================================
+% ΒΗΜΑ 3: ΔΙΑΒΑΣΜΑ ΑΠΟΤΕΛΕΣΜΑΤΩΝ
+% ============================================================
+results = zeros(N, 4);   % [alpha, CLtot, CDtot, Cmtot]
+
+for i = 1:N
+    fname = sprintf('results_%.2f.ft', aoa_vec(i));
+    
+    fid_r = fopen(fname, 'r');
+    content = fread(fid_r, '*char')';
+    fclose(fid_r);
+    
+    % Parse με regexp
+    CL = regexp(content, 'CLtot\s*=\s*([-\d.]+)', 'tokens');
+    CD = regexp(content, 'CDtot\s*=\s*([-\d.]+)', 'tokens');
+    Cm = regexp(content, 'Cmtot\s*=\s*([-\d.]+)', 'tokens');
+    
+    results(i,1) = aoa_vec(i);
+    results(i,2) = str2double(CL{1}{1});
+    results(i,3) = str2double(CD{1}{1});
+    results(i,4) = str2double(Cm{1}{1});
+
+end
+
+fprintf('\n%-8s %-10s %-10s %-10s\n', 'Alpha', 'CLtot', 'CDtot', 'Cmtot')
+fprintf('%-8s %-10s %-10s %-10s\n',  '-----', '-----', '-----', '-----')
+for i = 1:N
+    fprintf('%-8.2f %-10.5f %-10.5f %-10.5f\n', ...
+        results(i,1), results(i,2), results(i,3), results(i,4))
+end
+
+alpha_fine = linspace(a1, a2, 100);
+Cl         = interp1(results(:,1), results(:,2), alpha_fine, 'linear');
+Cd         = interp1(results(:,1), results(:,3), alpha_fine, 'pchip');
+Cm_interp  = interp1(results(:,1), results(:,4), alpha_fine, 'linear');
