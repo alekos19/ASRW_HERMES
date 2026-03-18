@@ -1,6 +1,190 @@
+folder = 'C:\Users\polit\Documents\ASWR\';
+cd(folder)
+
+% ============================================================
+% GEOMETRY DEFINITION (polygon)
+% x = span direction, y = chordwise direction
+% ============================================================
+x_wing = [0, 1.25, 1.25, 0, 0];
+y_wing = [1.25, .5, .25, 1, 1.25];
+x_tail = [0, .1, .25, 0, 0];
+y_tail = [.25, .25, 0, 0, .25];
+
+y_wing_body = 1.5 - y_wing(1);   % leading edge φτερού από μύτη (m)
+y_tail_body = 1.5 - y_tail(1);   % leading edge ουράς από μύτη (m)
+y_cg        = 0.5;   % κέντρο μάζας από μύτη (m)
+
+% Plot
+figure(1)
+plot(x_wing, y_wing, '-')
+hold on
+plot(x_tail, y_tail, '-')
+hold off
+grid on
+axis equal
+
+% Areas και AR
+A_wing  = polyarea(x_wing, y_wing);
+A_tail  = polyarea(x_tail, y_tail);
+b_wing  = max(x_wing);
+b_tail  = max(x_tail);
+fprintf('A_wing = %.2f\n', A_wing)
+fprintf('A_tail = %.2f\n', A_tail)
+
+a1 = 0;
+a2 = 120;
+N  = 100;
+aoa_vec = linspace(a1, a2, N);
+
+wing_airfoil = 'naca0009.dat' ;
+stab_airfoil = 'naca0009.dat' ;
+twist_wing_1  = 1.0;    % twist root wing (deg)
+twist_wing_2  = 1.0;   % twist tip wing (deg, αρνητικό = washout)
+twist_stab_1  = 1.0;    % twist root stab (deg)
+twist_stab_2  = 1.0;    % twist tip stab (deg)
+
+% ============================================================
+% ΕΞΑΓΩΓΗ SECTIONS ΓΙΑ AVL
+% ============================================================
+% Wing sections
+Yle_wr   = x_wing(1);
+Yle_wt   = x_wing(2);
+chord_wr = y_wing(1) - y_wing(4);
+chord_wt = y_wing(2) - y_wing(3);
+Xle_wr   = 0;
+Xle_wt   = y_wing(1) - y_wing(2);
+
+% Tail sections
+Yle_tr   = x_tail(1);
+Yle_tt   = x_tail(2);
+chord_tr = y_tail(1) - y_tail(4);
+chord_tt = y_tail(2) - y_tail(3);
+Xle_tr   = 0;
+Xle_tt   = y_tail(1) - y_tail(2);
+
+% ============================================================
+% ΓΡΑΦΕΙ ΤΟ AVL FILE
+% ============================================================
+Sref = 2 * A_wing;
+Cref = A_wing / b_wing;
+Bref = 2 * b_wing;
+
+if exist('our_rocket.avl', 'file'), delete('our_rocket.avl'); end
+
+fid = fopen('our_rocket.avl', 'w');
+
+fprintf(fid, 'OUR-ROCKET\n');
+fprintf(fid, '%-22s!   Mach\n',                        '0.0');
+fprintf(fid, '%-22s!   iYsym  iZsym  Zsym\n',          '0     0     0.0');
+fprintf(fid, '%-22s!   Sref   Cref   Bref\n',           sprintf('%.3f  %.3f  %.3f', Sref, Cref, Bref));
+fprintf(fid, '%-22s!   Xref   Yref   Zref\n',           sprintf('%.3f  0.0   0.0', y_cg));
+fprintf(fid, '%-22s!   CDp\n',                          '0.020');
+fprintf(fid, '#\n#==============================================================\n#\n');
+
+% --- WING ---
+fprintf(fid, 'SURFACE\nWing\n');
+fprintf(fid, '%-22s! Nchord   Cspace   Nspan  Sspace\n', '10  1.0  22  1.0');
+fprintf(fid, '#\n# reflect image wing about y=0 plane\n');
+fprintf(fid, 'YDUPLICATE\n     0.00000\n#\n#\n');
+fprintf(fid, 'SCALE\n  1.0   1.0   1.0\n#\n');
+fprintf(fid, '# x,y,z bias for whole surface\n');
+fprintf(fid, 'TRANSLATE\n    %.5f     0.00000     0.90000\n', y_wing_body);
+fprintf(fid, '#\n#--------------------------------------------------------------\n');
+fprintf(fid, '#    Xle         Yle         Zle         chord       angle\n');
+
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_wr, Yle_wr, 0.0, chord_wr, twist_wing_1);
+fprintf(fid, 'AFIL\n%s\n\n', wing_airfoil) ;
+fprintf(fid, '#-----------------------------\n');
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_wt, Yle_wt, 0.0, chord_wt, twist_wing_2);
+fprintf(fid, 'AFIL\n%s\n\n', wing_airfoil) ;
+
+% --- STAB ---
+fprintf(fid, '#\n#==============================================================\n#\n');
+fprintf(fid, 'SURFACE\nStab\n');
+fprintf(fid, '%-22s!  Nchord   Cspace\n', '8  1.0  5  -1.5');
+fprintf(fid, '#\n# reflect image wing about y=0 plane\n');
+fprintf(fid, 'YDUPLICATE\n     0.00000\n#\n');
+fprintf(fid, '# twist angle bias for whole surface\n');
+fprintf(fid, 'ANGLE\n     0.00000\n#\n');
+fprintf(fid, '# x,y,z bias for whole surface\n');
+fprintf(fid, 'TRANSLATE\n   %.4f     0.00000     0.00000\n', y_tail_body);
+fprintf(fid, 'SCALE\n 1.000  1.0  1.0\n');
+fprintf(fid, '#--------------------------------------------------------------\n');
+fprintf(fid, '#    Xle         Yle         Zle         chord       angle\n');
+
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_tr, Yle_tr, 0.0, chord_tr, twist_stab_1);
+fprintf(fid, 'AFIL\n%s\n\n', stab_airfoil) ;
+fprintf(fid, '#-----------------------------\n');
+fprintf(fid, 'SECTION\n');
+fprintf(fid, '    %-12.3f  %-12.3f  %-12.3f  %-12.3f  %.3f\n', Xle_tt, Yle_tt, 0.0, chord_tt, twist_stab_2);
+fprintf(fid, 'AFIL\n%s\n\n', stab_airfoil) ;
+fprintf(fid, '#==============================================================\n');
+
+fclose(fid);
+fprintf('AVL file written: our_rocket.avl\n')
+files = dir([folder '*.ft']);
+for f = files', delete(fullfile(folder, f.name)); end  
+
+% Βήμα 1: Γράψε τις εντολές για το AVL
+if exist('avl_commands.txt', 'file'), delete('avl_commands.txt'); end
+fid = fopen([folder 'avl_commands.txt'], 'w');
+fprintf(fid, 'load our_rocket.avl\n');
+fprintf(fid, 'oper\n');
+
+for i = 1:N
+    fprintf(fid, 'a a %.2f\n', aoa_vec(i));   % set angle of attack
+    fprintf(fid, 'x\n');                        % solve
+    fprintf(fid, 'ft\n');                       % force totals
+    fprintf(fid, 'results_%.2f.ft\n', aoa_vec(i));  % αποθήκευση
+end
+
+fprintf(fid, '\n\nquit\n');
+fclose(fid);
+
+% Βήμα 2: Τρέξε το AVL
+[status, ~] = system(['"' folder 'avl.exe" < avl_commands.txt']);
+if status ~= 0
+    error('AVL failed to run')
+end
+
+% ============================================================
+% ΒΗΜΑ 3: ΔΙΑΒΑΣΜΑ ΑΠΟΤΕΛΕΣΜΑΤΩΝ
+% ============================================================
+results = zeros(N, 4);   % [alpha, CLtot, CDtot, Cmtot]
+
+for i = 1:N
+    fname = sprintf('results_%.2f.ft', aoa_vec(i));
+    
+    fid_r = fopen(fname, 'r');
+    content = fread(fid_r, '*char')';
+    fclose(fid_r);
+    
+    % Parse με regexp
+    CL = regexp(content, 'CLtot\s*=\s*([-\d.]+)', 'tokens');
+    CD = regexp(content, 'CDtot\s*=\s*([-\d.]+)', 'tokens');
+    Cm = regexp(content, 'Cmtot\s*=\s*([-\d.]+)', 'tokens');
+    
+    results(i,1) = aoa_vec(i);
+    results(i,2) = str2double(CL{1}{1});
+    results(i,3) = str2double(CD{1}{1});
+    results(i,4) = str2double(Cm{1}{1});
+
+end
+
+fprintf('\n%-8s %-10s %-10s %-10s\n', 'Alpha', 'CLtot', 'CDtot', 'Cmtot')
+fprintf('%-8s %-10s %-10s %-10s\n',  '-----', '-----', '-----', '-----')
+for i = 1:N
+    fprintf('%-8.2f %-10.5f %-10.5f %-10.5f\n', ...
+        results(i,1), results(i,2), results(i,3), results(i,4))
+end
+
+%% AVL END
+
 vesselCapacity  = 2.0;
 waterCapacity   = 1.0;
-vesselDiameter  = 95;
 nozzleDiameter  = 9;
 rocketDryMass   = 0.20;
 pressureGauge   = 6.0;
@@ -13,257 +197,216 @@ ro = 1000;
 R  = 286.9;
 temp = 293;
 
-v_air = 1 ;
-rho = 1.225 ;
-S = .5 ; 
-fi = deg2rad(90.0) ;
-V_init = (vesselCapacity - waterCapacity) / 1000 ;
-mA_init = (pressureGauge*1e5 + pa) / (R*temp) * V_init ;
-m_init  = rocketDryMass + (waterCapacity/1000)*ro + mA_init ;
-X0 =  [0; 0; 0; 0 ; rocket.V_init ; rocket.m_init] ;
-AR = 5 ;
-e = 0.8 ; 
-cd0 = 0.04 ;
+tmax = 20;
+dt   = 0.001;
+N = tmax / dt;
+[T_log, ve_log, p_log, m_log] = thrust(vesselCapacity, waterCapacity, nozzleDiameter, rocketDryMass, pressureGauge, waterLossFactor, airLossFactor, k, pa, ro, R, temp,N,dt);
 
-res = thrust(vesselCapacity, waterCapacity, vesselDiameter, nozzleDiameter, ...
-           rocketDryMass, pressureGauge, waterLossFactor, ...
-           airLossFactor, k, g, pa, ro, R, temp);
+X_log = zeros(6,N);
+X_log(:,1) = [0;0;0;0;deg2rad(85);0];
+for i=1:(N-1)
+    m = m_log(i);
+    I = 0.03;
+    T = T_log(i);
+    v_air = 1;
+    rho = 1.225;
+    AR = 5;
+    S = 0.5;
 
-tT_log = res.time_log ;
-T_log = res.T_log ;
-m_log = res.m_log ;
+    Xi = X_log(:,i);
+    k1 = dt * dynamics(Xi, T, m, I, g, results, Cref, v_air, rho, S);
+    k2 = dt * dynamics(Xi+0.5*k1, T, m, I, g, results, Cref, v_air, rho, S);
+    k3 = dt * dynamics(Xi+0.5*k2, T, m, I, g, results, Cref, v_air, rho, S);
+    k4 = dt * dynamics(Xi+k3, T, m, I, g, results, Cref, v_air, rho, S);
 
-data  = readmatrix('xfoil_polar.txt', 'NumHeaderLines', 12);
-alpha = deg2rad(data(:, 1));
-cl_data = data(:, 2);   
-cd_data = data(:, 3);
-
-h = .001 ;
-t_max = 1000 ;
-t_vec = 0:h:t_max ;
-N = length(t_vec);
-X_log = zeros(6, N) ;
-X_log(:,1) = X0 ;
-
-for  i = 1 : (N-1)
-    t = t_vec(i) ;
-    Xi = X_log(:,i) ;
-    
-    if i <= length(T_log)
-        T = T_log(i);
-        m = m_log(i) ;
-    else 
-        T = 0;
-        m = m_log(end) ;
-    end
-
-    k1 = h * dynamics(t, Xi, alpha, cl_data, cd_data, rho, S, m, g, T, fi, v_air) ;
-    k2 = h * dynamics(t + 0.5 * h, Xi + 0.5 * k1, alpha, cl_data, cd_data, rho, S, m, g, T, fi, v_air) ;
-    k3 = h * dynamics(t + 0.5 * h, Xi + 0.5 * k2, alpha, cl_data, cd_data, rho, S, m, g, T, fi, v_air) ;
-    k4 = h * dynamics(t + h, Xi + k3, alpha, cl_data, cd_data, rho, S, m, g, T, fi, v_air) ;
-
-    X_log(:, i+1) = Xi + (1/6) * (k1 + 2 * k2 + 2* k3 + k4) ;
-
-    if X_log(3, i+1) < 0 
-        X_log = X_log(:, 1: i+1) ;
-        t_vec = t_vec(1: i+1) ;
+    X_log(:,i+1) = Xi + (1/6)*(k1+2*k2+2*k3+k4);
+    if X_log(3,i+1) < 0
+        N = i;
         break
     end
 end
 
-figure;
-plot(X_log(1,:), X_log(3,:));
-xlabel('x [m]'); 
-ylabel('y [m]'); 
-title('Τροχιά πτήσης');
+tmax  = N * dt;
+t_vec = dt:dt:tmax; 
+
+figure(2);
+subplot(2,2,1);
+plot(t_vec, T_log(1:N));
+xlabel("t(s)");
+ylabel("Thrust (N)");
+ylim([0 1.2*max(T_log)]);
+
+subplot(2,2,2);
+plot(t_vec, ve_log(1:N));
+xlabel("t(s)");
+ylabel("exhaust velocity (m/s)");
+ylim([0 1.2*max(ve_log)]);
+
+subplot(2,2,3);
+plot(t_vec, p_log(1:N));
+xlabel("t (s)");
+ylabel("pressure (bar)");
+ylim([0 1.2*max(p_log)]);
+
+subplot(2,2,4);
+plot(t_vec, m_log(1:N));
+xlabel("t (s)");
+ylabel("m (kg)");
+ylim([0 1.2*max(m_log)]);
+
+% plot X,Y,Vx,Vy
+
+figure(3);
+
+function plot_log(t_vec, log, labelx,labely)
+plot(t_vec, log);
+xlabel(labelx);
+ylabel(labely);
+%ylim([1.1*min(log) 1.1*max(log)]);
 grid on
-fprintf('Εμβέλεια: %.2f m\n', X_log(1,end));
-fprintf('Χρόνος: %.2f s\n', t_vec(end));
-
-function dXdt = dynamics(t, X, alpha, cl_data, rho, S, m, g, T, fi, v_air, AR, e, cd0)
-    x = X(1) ;
-    x_dot = X(2) ;
-    y = X(3) ;
-    y_dot = X(4) ;
-    
-    w = m * g ;
-    gamma = atan2(y_dot, x_dot); 
-    v_tot = sqrt(x_dot^2 + y_dot^2) ; 
-    V = sqrt(v_air^2 + v_tot^2 - 2 * v_air * v_tot * cos(gamma)) ;
-    a =  - pi/2 + gamma + acos( (-v_air^2 + V^2 + v_tot^2) / (2 * v_tot * V) ) ;
-
-    cl2D = clv(a, alpha, cl_data) ;
-    cl_val = cl2D * ( 1 / ( 1 + (2/AR))) ;
-    cd_val = cd0 + (cl_val^2) / (pi * AR * e) ;
-
-    L = cl_val * .5 * rho * S * v_tot^2 ;
-    D = cd_val * .5 * rho * S * v_tot^2 ;
-
-    [T, dV_air_dt, dm_dt] = thrust(V_air, V_water, m, a_est, ...) ;
-
-    y_dotdot = ( L + T * sin(fi) - w ) / m  ;
-    x_dotdot = ( T * cos(fi)  - D ) / m ;
-    
-    dXdt = [x_dot; x_dotdot; y_dot; y_dotdot] ;
 end
 
-function val = clv(a, alpha, cl_data)
+subplot(4,2,1);
+plot_log(t_vec, X_log(1,1:N), "t (s)", "H movement (m)");
 
-    val = interp1(alpha, cl_data, a, 'pchip');
-end
+subplot(4,2,2);
+plot_log(t_vec, X_log(2,1:N), "t (s)", "Vx (m/ms)");
 
-function val = cdv(a, alpha, cd_data)
-    val = interp1(alpha, cd_data, a, 'pchip');
-end
+subplot(4,2,3);
+plot_log(t_vec, X_log(3,1:N), "t (s)", "Y movement (m)");
 
+subplot(4,2,4);
+plot_log(t_vec, X_log(4,1:N), "t (s)", "Vy (m/ms)");
 
-function thrust = thrust(vesselCapacity, waterCapacity, vesselDiameter, ...
-                      nozzleDiameter, rocketDryMass, pressureGauge, ...
-                      waterLossFactor, airLossFactor, k, g, pa, ro, R, temp, ...
-                      x_dotdot, y_dotdot)
+subplot(4,2,5);
+plot_log(t_vec, X_log(5,1:N), "t (s)", "Theta (rad)");
 
-V   = (vesselCapacity - waterCapacity) / 1000; % Αρχικός όγκος αέρα (m³)
-Vw  = waterCapacity / 1000;                    % Αρχικός όγκος νερού (m³)
-Ar  = pi * (vesselDiameter  / 1000)^2 / 4;    % Διατομή δοχείου (m²)
-An  = pi * (nozzleDiameter  / 1000)^2 / 4;    % Διατομή ακροφυσίου (m²)
-p   = pressureGauge * 1e5;                     % Gauge πίεση (Pa)
-pI    = p;                              % Αρχική πίεση αναφοράς (Pa)
-tempI = temp;                           % Αρχική θερμοκρασία αναφοράς (K)
-roA   = pa / (R * temp);               % Πυκνότητα ατμοσφαιρικού αέρα (kg/m³)
-mA    = (p + pa) / (R * temp) * V;    % Μάζα συμπιεσμένου αέρα (kg)
-m0    = rocketDryMass;                  % Ξηρή μάζα (kg)
-m     = m0 + Vw * ro + mA;            % Συνολική αρχική μάζα (kg)
-hw    = Vw / Ar;                        % Ύψος στήλης νερού (m)
-C     = p * V^k;                        % Αδιαβατική σταθερά C = p·V^γ
-ve_init = sqrt(2 * p / ro);
-dm_init = An * ro * ve_init;
-T_init  = ve_init * dm_init + p * (1 - waterLossFactor) * An;
-a       = T_init / m - g;
+subplot(4,2,6);
+plot_log(t_vec, X_log(6,1:N), "t (s)", "Omega (rad/ms)");
 
-y  = 0;       % Αρχικό ύψος (m)
-v_tot = 0;       % Αρχική ταχύτητα (m/s)
-t = 0;       % Χρόνος πτήσης (s)
-dt = 0.001;   % Χρονικό βήμα (s)
+subplot(4,1,4);
+plot_log(X_log(1,1:N), X_log(3,1:N), "X(m)", "Y(m)");
 
-%% === PREALLOCATION =======================================================
-%  Συντηρητική εκτίμηση: 30 s πτήσης × 1/dt = 30000 βήματα.
-%  Τα arrays κόβονται στο πραγματικό μήκος μετά τα loops.
+function dXdt = dynamics(X, T, m, I, g, results, Cref, v_air, rho, S)
+    x_dot  = X(2);
+    y_dot  = X(4);
+    th     = X(5);
+    th_dot = X(6);
+    w = m * g;
 
-Nmax     = 1000000;
-time_log = zeros(Nmax, 1);
-h_log    = zeros(Nmax, 1);
-v_log    = zeros(Nmax, 1);
-a_log    = zeros(Nmax, 1);
-T_log    = zeros(Nmax, 1);
-ve_log   = zeros(Nmax, 1);
-p_log    = zeros(Nmax, 1);
-ph_log   = zeros(Nmax, 1);
+    v_tot = sqrt(x_dot^2 + y_dot^2);
 
-idx = 0;  % Counter: τρέχον πλήθος γεμάτων γραμμών
+    if v_tot < 1e-6
+        cl_val = 0; cd_val = 0; cm_val = 0;
+        gamma  = th;
+        V      = v_air;        
+    else
+        gamma  = atan2(y_dot, x_dot);
+        V      = sqrt(v_air^2 + v_tot^2 - 2*v_air*v_tot*cos(gamma));
+        arg    = (-v_air^2 + V^2 + v_tot^2) / (2*v_tot*V);
+        arg    = max(-1, min(1, arg));
+        a_rad  = -pi/2 + gamma + acos(arg);
+        a_deg  = rad2deg(th - a_rad);
+        a_deg  = max(results(1,1), min(results(end,1), a_deg));
+        %disp(a_deg)
 
-%% =========================================================================
-%% === ΦΑΣΗ 1: WATER PHASE =================================================
-%  Νερό εξέρχεται από το ακροφύσιο. Αέρας εκτονώνεται αδιαβατικά.
-%  Loop τελειώνει όταν: m = m0 + mA (εξαντλήθηκε το νερό)
-% =========================================================================
-
-fprintf('--- WATER PHASE ---\n');
-firstLoop = true;
-
-while m > m0 + mA
-    ve = sqrt(2 * p * (1 - waterLossFactor) / ro); % Exhaust velocity νερού (m/s)
-    dm = An * ro * ve * dt;                         % Μάζα νερού που εξέρχεται (kg)
-
-    m  = m  - dm;          % Μείωση συνολικής μάζας
-    V  = V  + dm / ro;     % Αύξηση V_air
-    Vw = Vw - dm / ro;     % Μείωση V_water
-    hw = Vw / Ar;          % Νέο ύψος στήλης νερού
-
-    % Πίεση: αδιαβατική + υδροστατική διόρθωση λόγω επιτάχυνσης
-    p    = C * V^(-k) + ro * (g + a) * hw;
-    temp = tempI * ((p + pa) / (pI + pa))^((k-1)/k);
-
-    T = ve * (dm/dt) + p * (1 - waterLossFactor) * An; % Ώση (N)
-    a = sqrt(x_dotdot^2 + y_dotdot^2) ;                      % Επιτάχυνση (m/s²)
-
-    v_tot = v_tot + a  * dt;
-    y  = y  + v_tot * dt;
-    t = t + dt;
-
-    if firstLoop
-        T0  = T;
-        ve0 = ve;
-        a0  = a / g;
-        TWR = T / (g * m);
-        Isp = T / (g * An * ro * ve);
-        firstLoop = false;
+        cl_val = interp1(results(:,1), results(:,2), a_deg, 'linear');
+        cd_val = interp1(results(:,1), results(:,3), a_deg, 'pchip');
+        cm_val = interp1(results(:,1), results(:,4), a_deg, 'linear');
     end
 
-    idx = idx + 1;
-    time_log(idx) = t;
-    h_log(idx)    = y;
-    v_log(idx)    = v_tot;
-    a_log(idx)    = a / g;
-    T_log(idx)    = T;
-    ve_log(idx)   = ve;
-    p_log(idx)    = (p + pa) / 1e5;
-    ph_log(idx)   = 1;
+    L = cl_val * 0.5 * rho * S * V^2;   
+    D = cd_val * 0.5 * rho * S * V^2;
+    M = cm_val * 0.5 * rho * S * V^2 * Cref;
+
+    x_dotdot  = (T*cos(th) - D*cos(gamma) - L*sin(gamma)) / m;
+    y_dotdot  = (T*sin(th) + L*cos(gamma) - D*sin(gamma) - w) / m;
+    th_dotdot = M / I;
+
+    dXdt = [x_dot; x_dotdot; y_dot; y_dotdot; th_dot; th_dotdot];
 end
 
-speedAtMECO  = v_tot;
-timeToMECO   = t;
-MECOaltitude = y;
-fprintf('MECO → v=%.2f m/s | h=%.2f m | t=%.3f s\n', speedAtMECO, MECOaltitude, timeToMECO);
 
-%% =========================================================================
-%% === ΦΑΣΗ 2: AIR PULSE ===================================================
-%  Αέρας εκτονώνεται ισεντροπικά. Διάκριση choked/unchoked ροής.
-%  Loop τελειώνει όταν: a ≤ -9 m/s² ή mA ≤ 0
-% =========================================================================
-
-fprintf('--- AIR PULSE PHASE ---\n');
-
-topSpeed       = v_tot;
-airPulseDeltaV = 0;
-roApE          = mA / V;  % Αρχική εκτίμηση πυκνότητας αέρα στο λαιμό
-
-while a > -9 && mA > 0
-    % Exhaust velocity από ισεντροπική εκτόνωση (De Laval)
-    ve     = sqrt(temp * R * (2*k/(k-1)) * (1 - (pa/(p+pa))^((k-1)/k)));
-    dm = ve * An * roApE * dt;
-
-    roApE = dm / (ve * dt * An);  % Ενημέρωση πυκνότητας στο λαιμό
-    m     = m  - dm;
-    mA    = mA - dm;
-
-    % Εικονική αύξηση/μείωση V για να βγει νέα πίεση (σταθερός όγκος δοχείου)
-    C    = p * V^k;
-    V    = V + dm / roApE;
-    p    = C * V^(-k);
-    temp = tempI * ((p + pa) / (pI + pa))^((k-1)/k);
-    V    = V - dm / roApE;        % Επαναφορά: όγκος δοχείου σταθερός
-
-    ve_eff = ve * (1 - airLossFactor); % Effective ve με loss factor
-    T  = ve_eff * (dm/dt) + p * An;   % Ώση (N)
-    a  = sqrt(x_dotdot^2 + y_dotdot^2) ;
-
-    v_tot = v_tot + a  * dt;
-    y  = y  + v_tot * dt;
-    t = t + dt;
-
-    if v_tot > topSpeed
-        topSpeed       = v_tot;
-        airPulseDeltaV = v_tot - speedAtMECO;
+function [T_log, ve_log, p_log, m_log] = thrust(vesselCapacity, waterCapacity, nozzleDiameter, rocketDryMass, pressureGauge, waterLossFactor, airLossFactor, k, pa, ro, R, temp, N,dt)
+    V   = (vesselCapacity - waterCapacity) / 1000; % Αρχικός όγκος αέρα (m³)
+    Vw  = waterCapacity / 1000;                    % Αρχικός όγκος νερού (m³)
+    An  = pi * (nozzleDiameter  / 1000)^2 / 4;     % Διατομή ακροφυσίου (m²)
+    p   = pressureGauge * 1e5;                     % Gauge πίεση (Pa)
+    pI    = p;                                     % Αρχική πίεση αναφοράς (Pa)
+    tempI = temp;                                  % Αρχική θερμοκρασία αναφοράς (K)
+    mA    = (p + pa) / (R * temp) * V;             % Μάζα συμπιεσμένου αέρα (kg)
+    m0    = rocketDryMass;                         % Ξηρή μάζα (kg)
+    m     = m0 + Vw * ro + mA;                     % Συνολική αρχική μάζα (kg)
+    C     = p * V^k;                               % Αδιαβατική σταθερά C = p·V^γ
+    
+    T_log = zeros(N, 1);
+    ve_log= zeros(N, 1);
+    p_log = zeros(N, 1);
+    m_log = ones(N,1)*m0;
+    
+    idx = 0;  
+    while idx < N && m > m0 + mA
+        ve = sqrt(2 * p * (1 - waterLossFactor) / ro); % Exhaust velocity νερού (m/s)
+        dm = An * ro * ve * dt;                         % Μάζα νερού που εξέρχεται (kg)
+    
+        m  = m  - dm;          % Μείωση συνολικής μάζας
+        V  = V  + dm / ro;     % Αύξηση V_air
+        Vw = Vw - dm / ro;     % Μείωση V_water
+        
+        p    = C * V^(-k);
+        temp = tempI * ((p + pa) / (pI + pa))^((k-1)/k);
+    
+        T = ve * (dm/dt) + p * (1 - waterLossFactor) * An; % Ώση (N)
+        
+        idx = idx + 1;
+        m_log(idx)    = m;
+        T_log(idx)    = T;
+        ve_log(idx)   = ve;
+        p_log(idx)    = (p + pa) / 1e5;
     end
-
-    idx = idx + 1;
-    time_log(idx) = t;
-    h_log(idx)    = y;
-    v_log(idx)    = v_tot;
-    a_log(idx)    = a / g;
-    T_log(idx)    = T;
-    ve_log(idx)   = ve_eff;
-    p_log(idx)    = (p + pa) / 1e5;
-    ph_log(idx)   = 2;
-end
+    
+    roApE = mA / V;      % Αρχική εκτίμηση πυκνότητας αέρα στο λαιμό
+    while idx < N && mA > 0
+        % --- Exhaust velocity: ισεντροπική εκτόνωση από p_chamber → pa ---
+        ve = sqrt(temp * R * (2*k/(k-1)) * (1-(pa/(p+pa))^((k-1)/k)));
+    
+        % --- Θερμοκρασία & ταχύτητα ήχου στο λαιμό (critical conditions) ---
+        tempE  = temp * 2 / (k + 1);       % T_throat = T · 2/(γ+1) (isentropic)
+        vSound = sqrt(k * R * tempE);      % a_sound = √(γ·R·T_throat)
+        M      = ve / vSound;              % Mach στο λαιμό
+    
+        if M >= 1
+            % Choked flow: ροή φτάνει ταχύτητα ήχου στο λαιμό (NASA formula)
+            dm = An * p / sqrt(temp) * sqrt(k/R) * ((k+1)/2)^(-(k+1)/(2*(k-1))) * dt;
+            ve = vSound;              % ve δεν μπορεί να υπερβεί vSound ισεντροπικά
+        else
+            % Unchoked flow: κλασική συνέχεια
+            dm = ve * An * roApE * dt;
+        end
+    
+        roApE = dm / (ve * dt * An);  % Ενημέρωση πυκνότητας αέρα στο λαιμό (kg/m³)
+    
+        % --- Ενημέρωση μάζας ---
+        m  = m  - dm;                 % Μείωση συνολικής μάζας
+        mA = mA - dm;                 % Μείωση μάζας αέρα
+    
+        % --- Πίεση: εικονική μεταβολή όγκου για να εξαχθεί νέα πίεση ---
+        C  = p * V^k;                 % Ενημέρωση αδιαβατικής σταθεράς
+        V  = V + dm / roApE;          % Εικονική αύξηση V (αέρας που εξέρχεται)
+        p  = C * V^(-k);              % Νέα πίεση μέσω pV^γ = C
+        temp = tempI * ((p + pa) / (pI + pa))^((k-1)/k); % Αδιαβατική θερμοκρασία
+        V  = V - dm / roApE;          % Επαναφορά: το δοχείο έχει ΣΤΑΘΕΡΟ όγκο!
+    
+        % --- Effective ve με loss factor (μέρος ροής δεν βγαίνει κατακόρυφα) ---
+        ve_eff = ve * (1 - airLossFactor);
+    
+        % --- Ώση ---
+        T = ve_eff * (dm/dt) + p * An;  % [momentum] + [pressure thrust]
+        
+        idx = idx + 1;
+        m_log(idx)    = m;
+        T_log(idx)    = T;
+        ve_log(idx)   = ve;
+        p_log(idx)    = (p + pa) / 1e5;
+    end
 end
