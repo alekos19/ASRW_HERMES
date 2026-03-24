@@ -1,0 +1,285 @@
+%% ROCKET_OPTIMIZER.m
+% Sweeps airfoil + twist combinations → maximizes score = sqrt(x^2+y^2) + t
+% ============================================================
+folder = 'C:\Users\polit\Documents\ASWR\';
+cd(folder)
+
+%% GEOMETRY (unchanged)
+x_wing = [0, 1.25, 1.25, 0, 0];
+y_wing = [1.25, .5, .25, 1, 1.25];
+x_tail = [0, .2, .5, 0, 0];
+y_tail = [.25, .25, 0, 0, .25];
+
+y_wing_body = 1.5 - y_wing(1);
+y_tail_body = 1.5 - y_tail(1);
+y_cg        = 0.4;
+
+A_wing = polyarea(x_wing, y_wing);
+b_wing = max(x_wing);
+Sref   = 2 * A_wing;
+Cref   = A_wing / b_wing;
+Bref   = 2 * b_wing;
+
+Xle_wr = 0;               Yle_wr = x_wing(1);
+Xle_wt = y_wing(1)-y_wing(2); Yle_wt = x_wing(2);
+chord_wr = y_wing(1) - y_wing(4);
+chord_wt = y_wing(2) - y_wing(3);
+
+Xle_tr = 0;               Yle_tr = x_tail(1);
+Xle_tt = y_tail(1)-y_tail(2); Yle_tt = x_tail(2);
+chord_tr = y_tail(1) - y_tail(4);
+chord_tt = y_tail(2) - y_tail(3);
+
+a1 = -10; a2 = 20; N_aoa = 100;
+aoa_vec = linspace(a1, a2, N_aoa);
+
+%% PROPULSION — προ-υπολογισμός μία φορά (σταθερό για όλους τους combos)
+vesselCapacity  = 2.0;  waterCapacity   = 1.0;
+nozzleDiameter  = 9;    rocketDryMass   = 0.20;
+pressureGauge   = 6.0;  waterLossFactor = 0.20;
+airLossFactor   = 0.30; k_gas = 1.40;
+g = 9.81; pa = 100000; ro = 1000; R = 286.9; temp = 293;
+dt = 0.001; tmax = 20; N_sim = round(tmax/dt);
+
+[T_log, ~, ~, m_log] = thrust_fn(vesselCapacity, waterCapacity, nozzleDiameter, ...
+    rocketDryMass, pressureGauge, waterLossFactor, airLossFactor, ...
+    k_gas, pa, ro, R, temp, N_sim, dt);
+
+%% SEARCH SPACE
+% Πρόσθεσε/αφαίρεσε αεροτομές ανάλογα με ποια .dat έχεις στον φάκελο
+wing_airfoils   = {'naca0006.dat','naca0009.dat','naca0012.dat','naca0015.dat'};
+stab_airfoils   = {'naca0006.dat','naca0009.dat','naca0012.dat'};
+twist_wing_vals = [-3, -2, -1, 0, 1, 2, 3];   % deg, ίδιο root & tip
+twist_stab_vals = [-3, -2, -1, 0, 1];          % deg, ίδιο root & tip
+
+Nw = numel(wing_airfoils);  Ns = numel(stab_airfoils);
+Ntw = numel(twist_wing_vals); Nts = numel(twist_stab_vals);
+N_total = Nw * Ns * Ntw * Nts;
+fprintf('=== Sweep: %d combinations ===\n\n', N_total);
+
+all_scores = nan(Nw, Ns, Ntw, Nts);
+best_score = -inf;
+best_combo = struct();
+combo_idx  = 0;
+
+% Καθάρισμα παλαιών .ft αρχείων
+for f = dir(fullfile(folder,'*.ft'))', delete(fullfile(folder, f.name)); end
+
+%% ΚΥΡΙΟ LOOP
+for wi = 1:Nw
+for si = 1:Ns
+for twi = 1:Ntw
+for tsi = 1:Nts
+    combo_idx = combo_idx + 1;
+    waf  = wing_airfoils{wi};
+    saf  = stab_airfoils{si};
+    tw_w = twist_wing_vals(twi);
+    tw_s = twist_stab_vals(tsi);
+
+    % ── Γράψε AVL file ──────────────────────────────────────────────
+    avl_fname = fullfile(folder, 'opt_rocket.avl');
+    fid = fopen(avl_fname, 'w');
+    fprintf(fid,'OUR-ROCKET\n');
+    fprintf(fid,'%-22s!   Mach\n',                       '0.0');
+    fprintf(fid,'%-22s!   iYsym  iZsym  Zsym\n',         '0     0     0.0');
+    fprintf(fid,'%-22s!   Sref   Cref   Bref\n',  sprintf('%.4f  %.4f  %.4f',Sref,Cref,Bref));
+    fprintf(fid,'%-22s!   Xref   Yref   Zref\n',  sprintf('%.4f  0.0   0.0', y_cg));
+    fprintf(fid,'%-22s!   CDp\n',                         '0.020');
+    fprintf(fid,'#\n#==============================================\n#\n');
+    % --- WING ---
+    fprintf(fid,'SURFACE\nWing\n');
+    fprintf(fid,'10  1.0  22  1.0     ! Nchord Cspace Nspan Sspace\n');
+    fprintf(fid,'YDUPLICATE\n0.0\nSCALE\n1.0 1.0 1.0\n');
+    fprintf(fid,'TRANSLATE\n%.5f  0.0  0.90000\n', y_wing_body);
+    fprintf(fid,'SECTION\n');
+    fprintf(fid,'  %.4f  %.4f  0.0000  %.4f  %.3f\n', Xle_wr, Yle_wr, chord_wr, tw_w);
+    fprintf(fid,'AFIL\n%s\n\n', waf);
+    fprintf(fid,'SECTION\n');
+    fprintf(fid,'  %.4f  %.4f  0.0000  %.4f  %.3f\n', Xle_wt, Yle_wt, chord_wt, tw_w);
+    fprintf(fid,'AFIL\n%s\n\n', waf);
+    % --- STAB ---
+    fprintf(fid,'#\n#==============================================\n#\n');
+    fprintf(fid,'SURFACE\nStab\n');
+    fprintf(fid,'8  1.0  5  -1.5     ! Nchord Cspace Nspan Sspace\n');
+    fprintf(fid,'YDUPLICATE\n0.0\nANGLE\n0.0\n');
+    fprintf(fid,'TRANSLATE\n%.4f  0.0  0.0\n', y_tail_body);
+    fprintf(fid,'SCALE\n1.0  1.0  1.0\n');
+    fprintf(fid,'SECTION\n');
+    fprintf(fid,'  %.4f  %.4f  0.0000  %.4f  %.3f\n', Xle_tr, Yle_tr, chord_tr, tw_s);
+    fprintf(fid,'AFIL\n%s\n\n', saf);
+    fprintf(fid,'SECTION\n');
+    fprintf(fid,'  %.4f  %.4f  0.0000  %.4f  %.3f\n', Xle_tt, Yle_tt, chord_tt, tw_s);
+    fprintf(fid,'AFIL\n%s\n\n', saf);
+    fprintf(fid,'#==============================================\n');
+    fclose(fid);
+
+    % ── AVL commands ────────────────────────────────────────────────
+    cmd_fname = fullfile(folder, 'opt_avl_cmd.txt');
+    fid = fopen(cmd_fname, 'w');
+    fprintf(fid,'load opt_rocket.avl\noper\n');
+    for i = 1:N_aoa
+        fprintf(fid,'a a %.2f\nx\nft\nopt_%.2f.ft\n', aoa_vec(i), aoa_vec(i));
+    end
+    fprintf(fid,'\n\nquit\n');
+    fclose(fid);
+
+    % ── Τρέξε AVL ───────────────────────────────────────────────────
+    [status, ~] = system(['"' fullfile(folder,'avl.exe') '" < "' cmd_fname '"']);
+    if status ~= 0
+        fprintf('[%3d/%d] AVL ERROR — skip\n', combo_idx, N_total);
+        continue
+    end
+
+    % ── Διάβασε αποτελέσματα ────────────────────────────────────────
+    aero = zeros(N_aoa, 4);
+    ok = true;
+    for i = 1:N_aoa
+        ft_file = fullfile(folder, sprintf('opt_%.2f.ft', aoa_vec(i)));
+        if ~exist(ft_file,'file'), ok = false; break; end
+        fid_r = fopen(ft_file,'r');
+        raw   = fread(fid_r,'*char')';
+        fclose(fid_r);
+        CL = regexp(raw, 'CLtot\s*=\s*([-\d.eE+]+)', 'tokens');
+        CD = regexp(raw, 'CDtot\s*=\s*([-\d.eE+]+)', 'tokens');
+        Cm = regexp(raw, 'Cmtot\s*=\s*([-\d.eE+]+)', 'tokens');
+        if isempty(CL)||isempty(CD)||isempty(Cm), ok = false; break; end
+        aero(i,:) = [aoa_vec(i), str2double(CL{1}{1}), ...
+                     str2double(CD{1}{1}), str2double(Cm{1}{1})];
+    end
+    % Καθαρισμός .ft αυτού του run
+    for f = dir(fullfile(folder,'opt_*.ft'))', delete(fullfile(folder, f.name)); end
+    if ~ok
+        fprintf('[%3d/%d] Parse ERROR — skip\n', combo_idx, N_total);
+        continue
+    end
+
+    % ── Trajectory + score ──────────────────────────────────────────
+    score = traj_score(T_log, m_log, N_sim, dt, g, aero, Cref, Sref);
+    all_scores(wi, si, twi, tsi) = score;
+
+    fprintf('[%3d/%d]  W=%-16s  S=%-16s  tw_w=%+4.1f  tw_s=%+4.1f  score=%8.3f\n', ...
+        combo_idx, N_total, waf, saf, tw_w, tw_s, score);
+
+    if score > best_score
+        best_score = score;
+        best_combo = struct('wing',waf,'stab',saf,'tw_w',tw_w,'tw_s',tw_s);
+    end
+end; end; end; end
+
+%% REPORT
+fprintf('\n==============================================\n');
+fprintf('  ΒΕΛΤΙΣΤΗ ΔΙΑΜΟΡΦΩΣΗ\n');
+fprintf('  Wing airfoil : %s\n', best_combo.wing);
+fprintf('  Stab airfoil : %s\n', best_combo.stab);
+fprintf('  Wing twist   : %+.1f deg\n', best_combo.tw_w);
+fprintf('  Stab twist   : %+.1f deg\n', best_combo.tw_s);
+fprintf('  Score        : %.4f\n',      best_score);
+fprintf('==============================================\n');
+
+%% ΑΠΟΘΗΚΕΥΣΗ CSV
+fid = fopen(fullfile(folder,'sweep_results.csv'),'w');
+fprintf(fid,'wing_airfoil,stab_airfoil,twist_wing_deg,twist_stab_deg,score\n');
+for wi=1:Nw; for si=1:Ns; for twi=1:Ntw; for tsi=1:Nts
+    s = all_scores(wi,si,twi,tsi);
+    if ~isnan(s)
+        fprintf(fid,'%s,%s,%.1f,%.1f,%.5f\n', wing_airfoils{wi}, ...
+            stab_airfoils{si}, twist_wing_vals(twi), twist_stab_vals(tsi), s);
+    end
+end; end; end; end
+fclose(fid);
+fprintf('Αποτελέσματα: sweep_results.csv\n');
+
+
+%% ============================================================
+%% LOCAL FUNCTIONS
+%% ============================================================
+
+function score = traj_score(T_log, m_log, N_sim, dt, g, aero, Cref, Sref)
+    X   = [0; 0; 0; 0; deg2rad(85); 0];
+    rho = 1.225;  v_air = 0;  I = 0.0375;
+    N_end = N_sim;
+    for i = 1:(N_sim-1)
+        T = T_log(i);  m = m_log(i);
+        k1 = dt * dyn6(X,         T,m,I,g,aero,Cref,v_air,rho,Sref);
+        k2 = dt * dyn6(X+0.5*k1,  T,m,I,g,aero,Cref,v_air,rho,Sref);
+        k3 = dt * dyn6(X+0.5*k2,  T,m,I,g,aero,Cref,v_air,rho,Sref);
+        k4 = dt * dyn6(X+k3,      T,m,I,g,aero,Cref,v_air,rho,Sref);
+        X  = X + (k1 + 2*k2 + 2*k3 + k4) / 6;
+        if X(3) < 0, N_end = i; break; end
+    end
+    score = sqrt(X(1)^2 + X(3)^2) + N_end * dt;
+end
+
+function dXdt = dyn6(X, T, m, I, g, res, Cref, v_air, rho, Sref)
+    xd = X(2); yd = X(4); th = X(5); thd = X(6);
+    if sqrt(xd^2 + yd^2) < 1e-6
+        cl=0; cd=0; cm=0; V=v_air;
+    else
+        V    = sqrt((xd - v_air)^2 + yd^2);
+        adeg = rad2deg(th - atan2(yd, xd - v_air));
+        adeg = max(res(1,1), min(res(end,1), adeg));
+        cl   = interp1(res(:,1), res(:,2), adeg, 'linear');
+        cd   = interp1(res(:,1), res(:,3), adeg, 'pchip');
+        cm   = interp1(res(:,1), res(:,4), adeg, 'linear');
+    end
+    q    = 0.5 * rho * V^2;
+    dXdt = [xd;
+            (T*cos(th) - cd*q*Sref) / m;
+            yd;
+            (cl*q*Sref + T*sin(th) - m*g) / m;
+            thd;
+            cm*q*Sref*Cref / I];
+end
+
+function [T_log, ve_log, p_log, m_log] = thrust_fn(vesselCapacity, waterCapacity, ...
+        nozzleDiameter, rocketDryMass, pressureGauge, waterLossFactor, ...
+        airLossFactor, k, pa, ro, R, temp, N, dt)
+    V   = (vesselCapacity - waterCapacity) / 1000;
+    Vw  = waterCapacity / 1000;
+    An  = pi * (nozzleDiameter/1000)^2 / 4;
+    p   = pressureGauge * 1e5;
+    pI  = p;  tempI = temp;
+    mA  = (p + pa) / (R * temp) * V;
+    m0  = rocketDryMass;
+    m   = m0 + Vw*ro + mA;
+    C   = p * V^k;
+
+    T_log  = zeros(N,1); ve_log = zeros(N,1);
+    p_log  = zeros(N,1); m_log  = ones(N,1) * m0;
+    idx = 0;
+
+    % Φάση νερού
+    while idx < N && m > m0 + mA
+        ve = sqrt(2*p*(1-waterLossFactor)/ro);
+        dm = An*ro*ve*dt;
+        m  = m  - dm;  V  = V  + dm/ro;  Vw = Vw - dm/ro;
+        p  = C * V^(-k);
+        temp = tempI * ((p+pa)/(pI+pa))^((k-1)/k);
+        T    = ve*(dm/dt) + p*(1-waterLossFactor)*An;
+        idx  = idx + 1;
+        m_log(idx)=m; T_log(idx)=T; ve_log(idx)=ve; p_log(idx)=(p+pa)/1e5;
+    end
+
+    % Φάση αέρα
+    roApE = mA / V;
+    while idx < N && mA > 0
+        ve    = sqrt(temp*R*(2*k/(k-1))*(1-(pa/(p+pa))^((k-1)/k)));
+        tempE = temp * 2/(k+1);
+        vSnd  = sqrt(k*R*tempE);
+        if ve/vSnd >= 1
+            dm = An*p/sqrt(temp)*sqrt(k/R)*((k+1)/2)^(-(k+1)/(2*(k-1)))*dt;
+            ve = vSnd;
+        else
+            dm = ve * An * roApE * dt;
+        end
+        roApE = dm / (ve*dt*An);
+        m  = m  - dm;  mA = mA - dm;
+        C  = p * V^k;  V  = V + dm/roApE;
+        p  = C * V^(-k);
+        temp = tempI * ((p+pa)/(pI+pa))^((k-1)/k);
+        V  = V - dm/roApE;
+        T  = ve*(1-airLossFactor)*(dm/dt) + p*An;
+        idx = idx + 1;
+        m_log(idx)=m; T_log(idx)=T; ve_log(idx)=ve; p_log(idx)=(p+pa)/1e5;
+    end
+end
